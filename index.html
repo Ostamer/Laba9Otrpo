@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Чат</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 0;
+        }
+        #messages {
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 10px;
+        }
+        #inputField {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+        }
+        .message {
+            padding: 5px;
+            margin: 5px 0;
+            border-bottom: 1px solid #ddd;
+        }
+        .info {
+            color: #888;
+            font-style: italic;
+        }
+        .users {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Чат</h1>
+<div id="messages"></div>
+<input type="text" id="inputField" placeholder="Ваше сообщение" autofocus />
+
+<script>
+    const ws = new WebSocket('ws://localhost:8888/ws');
+    const messagesDiv = document.getElementById('messages');
+    const inputField = document.getElementById('inputField');
+
+    ws.onopen = function() {
+        console.log('WebSocket соединение установлено');
+    };
+
+    ws.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        console.log("Данные получены от сервера:", data);
+
+        if (data.type === "info") {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', 'info');
+            messageElement.textContent = data.message || `Пользователей онлайн: ${data.users}`;
+            messagesDiv.appendChild(messageElement);
+        } else if (data.type === "message") {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            messageElement.textContent = data.message;
+            messagesDiv.appendChild(messageElement);
+        }
+
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    };
+
+
+    inputField.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter' && inputField.value.trim() !== '') {
+            const message = inputField.value.trim();
+            ws.send(JSON.stringify({ message: message }));
+            inputField.value = '';
+        }
+    });
+</script>
+
+</body>
+</html>

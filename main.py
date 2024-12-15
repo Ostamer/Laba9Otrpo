@@ -6,15 +6,16 @@ from tornado.web import Application, RequestHandler
 from tornado.websocket import WebSocketHandler
 import redis.asyncio as aioredis
 from dotenv import load_dotenv
+import tornado.web
 
 # Загрузка переменных из файла .env
 load_dotenv()
 
-REDIS_HOST = os.getenv('REDIS_HOST')  # Хост Redis
-REDIS_PORT = os.getenv('REDIS_PORT')  # Порт Redis
-CHAT_CHANNEL = os.getenv('CHAT_CHANNEL')  # Канал для чатов в Redis
-SERVER_HOST = os.getenv('SERVER_HOST')  # Хост для сервера Tornado
-SERVER_PORT = os.getenv('SERVER_PORT')  # Порт для сервера Tornado
+REDIS_HOST = os.getenv('REDIS_HOST')
+REDIS_PORT = os.getenv('REDIS_PORT')
+CHAT_CHANNEL = os.getenv('CHAT_CHANNEL')
+SERVER_HOST = os.getenv('SERVER_HOST')
+SERVER_PORT = os.getenv('SERVER_PORT')
 
 redis = None
 
@@ -22,48 +23,48 @@ redis = None
 class ChatWebSocketHandler(WebSocketHandler):
     clients = set()
 
-    # Метод при подключении нового пользователя и написания приветсвенного сообщения
     def open(self):
         self.set_nodelay(True)
         ChatWebSocketHandler.clients.add(self)
-        self.write_message({"type": "info", "message": "Добро пожаловать на мой первый сервер"})
+        self.write_message({"type": "info", "message": "Добро пожаловать на сервер!"})
         self.update_clients()
 
-    # Метод для обработки сообщений и отправки в редис
     def on_message(self, message):
-        data = json.loads(message)
-        if "message" in data:
-            asyncio.create_task(redis.publish(CHAT_CHANNEL, json.dumps(data)))
+        try:
+            data = json.loads(message)
+            if "message" in data:
+                message_data = {
+                    "type": "message",
+                    "message": data["message"]
+                }
+                asyncio.create_task(redis.publish(CHAT_CHANNEL, json.dumps(message_data)))  # Отправка в Redis
+                print(f"Получено сообщение: {data}")
+        except Exception as e:
+            print(f"Ошибка при обработке сообщения: {e}")
 
-    # Метод для отключения пользователя при выходе
     def on_close(self):
         ChatWebSocketHandler.clients.remove(self)
         self.update_clients()
 
-    # Для обхода Cors заголовков
     def check_origin(self, origin):
         return True
 
-    # Метод для отправки начального сообщения всем пользователям
     @classmethod
     def send_to_clients(cls, message):
         for client in cls.clients:
-            client.write_message(message)
+            client.write_message(json.dumps(message))  # Отправка сообщений всем клиентам
 
-    # Информация о кол-во поключенных клиентов
     def update_clients(self):
         users = len(ChatWebSocketHandler.clients)
-        info_message = json.dumps({"type": "info", "users": users})
+        info_message = {"type": "info", "users": users}
         for client in ChatWebSocketHandler.clients:
-            client.write_message(info_message)
+            client.write_message(json.dumps(info_message))
 
 
-# Класс для обработки HTTP запросов
+# Класс для обработки HTTP запросов и рендеринга HTML страницы
 class MainHandler(RequestHandler):
     def get(self):
-        self.write("<h1>Сервер запущен!!!!</h1>"
-                   "<h2>Как дела?<h2>")
-
+        self.render("index.html")  # Возвращаем HTML файл
 
 # Функция подписки на канал Redis для получения сообщений
 async def redis_subscriber():
@@ -73,16 +74,19 @@ async def redis_subscriber():
     async for message in pubsub.listen():
         if message["type"] == "message":
             data = json.loads(message["data"].decode("utf-8"))
-            ChatWebSocketHandler.send_to_clients(data)
+            print(f"Получено сообщение от Redis: {data}")
+            ChatWebSocketHandler.send_to_clients(data)  # Отправка сообщений всем пользователям
 
-# Функция для создания приложения Tornado и прописывание маршрутов приложения
+
+# Функция для создания приложения Tornado
 def make_app():
     return Application([
         (r"/", MainHandler),
         (r"/ws", ChatWebSocketHandler),
     ])
 
-# Логика запуска всех программ
+
+# Главная функция для запуска сервера
 async def main():
     global redis
     redis = aioredis.from_url(f"redis://{REDIS_HOST}:{REDIS_PORT}")
@@ -94,7 +98,7 @@ async def main():
     print(f"Сервер запущен на адресе http://{SERVER_HOST}:{SERVER_PORT}")
     await asyncio.Event().wait()
 
-# Запуск скрипта
+# Запуск приложения
 if __name__ == "__main__":
     try:
         asyncio.run(main())
